@@ -1,0 +1,24 @@
+# Node Modules
+node_modules/
+
+# Environment Files
+.env
+.env.local
+.env.production
+.env.development
+
+# Firebase Admin Secret
+firebase-adminsdk.json
+
+# Build/Output folders
+dist/
+build/
+
+# Vercel
+.vercel/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
