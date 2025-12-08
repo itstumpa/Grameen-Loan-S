@@ -9,13 +9,22 @@ const port = process.env.PORT || 3000;
 
 
 const crypto = require("crypto");
-const admin = require("firebase-admin");
+// const admin = require("firebase-admin");
+// import admin from "firebase-admin";
+const admin = require("../Grameen_Loan_S/firebase/firebaseAdmin");
 
-const serviceAccount = require("./firebase-adminsdk.json");
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+// const serviceAccount = require("./firebase-adminsdk.json");
+
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount)
+// });
+credential: admin.credential.cert({
+  project_id: process.env.FIREBASE_ADMIN_PROJECT_ID,
+  client_email: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+  private_key: process.env.FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, "\n"),
+})
+
 
 
 function generateTrackingId() {
@@ -34,27 +43,53 @@ app.use(cors({
 app.use(express.json());
 
 
+// const verifyFBToken = async (req, res, next) => {
+//   // console.log(('headers in the middleware', req.headers.authorization))
+//   const token = req.headers.authorization?.split(' ')[1];
+//   if (!token) {
+//     return res.status(401).send({ message: 'unauthorized access' });
+//   }
+
+//   try {
+//     // Verify Firebase token
+//     const decodedToken = await admin.auth().verifyIdToken(token);
+//     req.decoded_email = decodedToken.email;
+
+//     console.log('Decoded email:', req.decoded_email); // Debug
+//     console.log('Query email:', req.query.email); // Debug
+
+//     next();
+//   } catch (error) {
+//     console.error('Token verification error:', error);
+//     return res.status(401).send({ message: 'Invalid token' });
+//   }
+// };
+
+
+
 const verifyFBToken = async (req, res, next) => {
-  // console.log(('headers in the middleware', req.headers.authorization))
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) {
-    return res.status(401).send({ message: 'unauthorized access' });
-  }
-
   try {
-    // Verify Firebase token
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    req.decoded_email = decodedToken.email;
+    const authorization = req.headers.authorization;
 
-    console.log('Decoded email:', req.decoded_email); // Debug
-    console.log('Query email:', req.query.email); // Debug
+    if (!authorization || !authorization.startsWith("Bearer ")) {
+      return res.status(401).send({ message: "Unauthorized access" });
+    }
+
+    const token = authorization.split(" ")[1];
+
+    const decoded = await admin.auth().verifyIdToken(token);
+
+    req.decoded_email = decoded.email;
+    req.decoded_uid = decoded.uid;
 
     next();
-  } catch (error) {
-    console.error('Token verification error:', error);
-    return res.status(401).send({ message: 'Invalid token' });
+
+  } catch (err) {
+    console.error("Firebase verify token error:", err);
+    return res.status(401).send({ message: "Invalid or expired token" });
   }
 };
+
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ielazur.mongodb.net/?appName=Cluster0`;
