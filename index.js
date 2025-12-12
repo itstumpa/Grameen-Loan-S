@@ -112,21 +112,21 @@ async function run() {
     const userCollection = db.collection('users');
     const loanCollection = db.collection('all-loans');
      const loanApplicationCollection = db.collection('loan-applications');
-    // const parcelsCollection = db.collection('parcels');
-    // const paymentCollection = db.collection('payments');
-    // const ridersCollection = db.collection('riders');
 
 
+
+ 
+   
     app.get('/', (req, res) => {
-      res.send('Server is running properly 🚀');
+      res.send('Server is running properly');
     });
 
 
 
     // Get all users
-app.get('/users', async (req, res) => {
+app.get('/users', verifyFBToken, async (req, res) => {
   try {
-    const users = await userCollection.find().toArray();  // ✅ CORRECT
+    const users = await userCollection.find().toArray();
     res.json(users);
   } catch (error) {
     console.error('Error fetching users:', error);
@@ -134,19 +134,63 @@ app.get('/users', async (req, res) => {
   }
 });
 
-// Your existing routes (already correct)
+
+ app.get('/users/:email/role', async (req, res) => {
+            const email = req.params.email;
+            const query = { email }
+            const user = await userCollection.findOne(query);
+            res.send({ role: user?.role || 'user' })
+        })
+
 app.post('/users', async (req, res) => {
-  const user = req.body;
-  user.role = 'user';
-  user.createdAt = new Date();
-  const userExists = await userCollection.findOne({ email: user.email });
-  if (userExists) {
-    return res.status(409).send({ message: 'User already exists' });
+  try {
+    const user = req.body;
+     user.role = 'user';
+    
+    // Check if user already exists
+    const existingUser = await userCollection.findOne({ email: user.email });
+    
+    if (existingUser) {
+      console.log('User already exists:', user.email);
+      return res.status(409).json({ 
+        success: false,
+        message: 'User already exists' 
+      });
+    }
+    
+    user.createdAt = new Date();
+    user.updatedAt = new Date();
+    
+    const result = await userCollection.insertOne(user);
+    console.log('New user created:', user.email);
+    
+    res.status(201).json({ 
+      success: true,
+      message: 'User created successfully',
+      insertedId: result.insertedId
+    });
+    
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
-  const result = await userCollection.insertOne(user);
-  res.send(result);
 });
 
+  app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const roleInfo = req.body;
+            const query = { _id: new ObjectId(id) }
+            const updatedDoc = {
+                $set: {
+                    role: roleInfo.role
+                }
+            }
+            const result = await userCollection.updateOne(query, updatedDoc)
+            res.send(result);
+        })
 
 
 app.get('/users/:email', async (req, res) => {
@@ -159,7 +203,7 @@ app.get('/users/:email', async (req, res) => {
     }
     
     const isAdmin = user?.role === 'admin';
-    res.json({ admin: isAdmin, user: user });  // Send user data too
+    res.json({ admin: isAdmin, user: user });
     
   } catch (error) {
     console.error('Error fetching user:', error);
@@ -167,17 +211,16 @@ app.get('/users/:email', async (req, res) => {
   }
 });
 
-// Update user (role & status)
 // Update user profile by email
 app.patch('/users/:email', async (req, res) => {
   try {
     const email = req.params.email;
     const updateData = req.body;
 
-    console.log('📥 Updating user:', email);
-    console.log('📦 Update data:', updateData);
+    console.log('Updating user:', email);
+    console.log('Update data:', updateData);
 
-    // Update user in database
+    // Update or CREATE user in database (upsert: true)
     const result = await userCollection.updateOne(
       { email: email },
       { 
@@ -190,35 +233,37 @@ app.patch('/users/:email', async (req, res) => {
           occupation: updateData.occupation,
           monthlyIncome: updateData.monthlyIncome,
           updatedAt: new Date()
+        },
+        $setOnInsert: {
+          email: email,
+          role: 'user',
+          createdAt: new Date()
         }
-      }
+      },
+      { upsert: true }
     );
 
-    if (result.matchedCount === 0) {
-      console.log('❌ User not found:', email);
-      return res.status(404).json({ 
-        success: false,
-        message: 'User not found' 
-      });
+    if (result.upsertedCount > 0) {
+      console.log('New user created:', email);
+    } else {
+      console.log('User updated:', email);
     }
-
-    console.log('✅ User updated successfully:', email);
     
     res.json({ 
       success: true, 
-      message: 'Profile updated successfully',
-      modifiedCount: result.modifiedCount
+      message: result.upsertedCount > 0 ? 'User created' : 'Profile updated successfully',
+      modifiedCount: result.modifiedCount,
+      upsertedCount: result.upsertedCount
     });
 
   } catch (error) {
-    console.error('❌ Error updating user:', error);
+    console.error('Error updating user:', error);
     res.status(500).json({ 
       success: false,
       error: error.message 
     });
   }
 });
-
 // Delete user
 app.delete('/users/:email', async (req, res) => {
   try {
@@ -229,10 +274,10 @@ app.delete('/users/:email', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    console.log('✅ User deleted:', email);
+    console.log(' User deleted:', email);
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
-    console.error('❌ Error deleting user:', error);
+    console.error('Error deleting user:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -243,7 +288,7 @@ app.delete('/users/:email', async (req, res) => {
 
 app.get('/all-loans', async (req, res) => {
   try {
-    const loans = await loanCollection.find().toArray();  // MongoDB query
+    const loans = await loanCollection.find().toArray();
     res.json(loans);
   } catch (error) {
         console.error('Error fetching loans:', error);
@@ -315,11 +360,10 @@ app.delete('/all-loans/:id', async (req, res) => {
  // Create loan application
     app.post('/loan-applications', async (req, res) => {
       try {
-        console.log('📥 Received loan application:', req.body);
+        console.log('Received loan application:', req.body);
         
         const application = req.body;
         
-        // Validate required fields
         if (!application.userEmail || !application.loanId || !application.firstName) {
           return res.status(400).json({ 
             message: 'Missing required fields',
@@ -327,10 +371,9 @@ app.delete('/all-loans/:id', async (req, res) => {
           });
         }
         
-        // Insert into database
         const result = await loanApplicationCollection.insertOne(application);
         
-        console.log('✅ Loan application created:', result.insertedId);
+        console.log(' Loan application created:', result.insertedId);
         
         res.status(201).json({
           success: true,
@@ -339,7 +382,7 @@ app.delete('/all-loans/:id', async (req, res) => {
         });
         
       } catch (error) {
-        console.error('❌ Error creating application:', error);
+        console.error('Error creating application:', error);
         res.status(500).json({ 
           success: false,
           message: 'Failed to submit application',
@@ -348,7 +391,7 @@ app.delete('/all-loans/:id', async (req, res) => {
       }
     });
 
-    // Get all loan applications (admin)
+    // Get all loan applications admin
     app.get('/loan-applications', async (req, res) => {
       try {
         const applications = await loanApplicationCollection
@@ -356,10 +399,10 @@ app.delete('/all-loans/:id', async (req, res) => {
           .sort({ appliedAt: -1 })
           .toArray();
         
-        console.log(`✅ Found ${applications.length} applications`);
+        console.log(` Found ${applications.length} applications`);
         res.json(applications);
       } catch (error) {
-        console.error('❌ Error fetching applications:', error);
+        console.error('Error fetching applications:', error);
         res.status(500).json({ error: error.message });
       }
     });
@@ -368,17 +411,17 @@ app.delete('/all-loans/:id', async (req, res) => {
     app.get('/loan-applications/user/:email', async (req, res) => {
       try {
         const email = req.params.email;
-        console.log('📥 Fetching applications for:', email);
+        console.log('Fetching applications for:', email);
         
         const applications = await loanApplicationCollection
           .find({ userEmail: email })
           .sort({ appliedAt: -1 })
           .toArray();
         
-        console.log(`✅ Found ${applications.length} applications for ${email}`);
+        console.log(`Found ${applications.length} applications for ${email}`);
         res.json(applications);
       } catch (error) {
-        console.error('❌ Error fetching user applications:', error);
+        console.error('Error fetching user applications:', error);
         res.status(500).json({ error: error.message });
       }
     });
@@ -397,12 +440,12 @@ app.delete('/all-loans/:id', async (req, res) => {
         
         res.json(application);
       } catch (error) {
-        console.error('❌ Error fetching application:', error);
+        console.error('Error fetching application:', error);
         res.status(500).json({ error: error.message });
       }
     });
 
-    // Update application status (admin)
+    // Update application status admin
     app.patch('/loan-applications/:id', async (req, res) => {
       try {
         const id = req.params.id;
@@ -422,13 +465,13 @@ app.delete('/all-loans/:id', async (req, res) => {
           return res.status(404).json({ message: 'Application not found' });
         }
         
-        console.log('✅ Application updated:', id);
+        console.log('Application updated:', id);
         res.json({ 
           success: true,
           message: 'Application updated successfully' 
         });
       } catch (error) {
-        console.error('❌ Error updating application:', error);
+        console.error('Error updating application:', error);
         res.status(500).json({ error: error.message });
       }
     });
@@ -445,13 +488,13 @@ app.delete('/all-loans/:id', async (req, res) => {
           return res.status(404).json({ message: 'Application not found' });
         }
         
-        console.log('✅ Application deleted:', id);
+        console.log('Application deleted:', id);
         res.json({ 
           success: true,
           message: 'Application deleted successfully' 
         });
       } catch (error) {
-        console.error('❌ Error deleting application:', error);
+        console.error('Error deleting application:', error);
         res.status(500).json({ error: error.message });
       }
     });
