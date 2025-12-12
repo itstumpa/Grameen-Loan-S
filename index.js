@@ -115,7 +115,42 @@ async function run() {
 
 
 
- 
+  // middle admin before allowing admin activity
+        // must be used after verifyFBToken middleware
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await userCollection.findOne(query);
+
+            if (!user || user.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            next();
+        }
+        const verifyManager = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await userCollection.findOne(query);
+
+            if (!user || user.role !== 'manager') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            next();
+        }
+         const verifyUser = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await userCollection.findOne(query);
+
+            if (!user || user.role !== 'user') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            next();
+        }
+
    
     app.get('/', (req, res) => {
       res.send('Server is running properly');
