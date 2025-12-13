@@ -2,7 +2,7 @@ const express = require('express');
 require('dotenv').config();
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); 
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -112,7 +112,7 @@ async function run() {
     const userCollection = db.collection('users');
     const loanCollection = db.collection('all-loans');
      const loanApplicationCollection = db.collection('loan-applications');
-
+      const paymentCollection = db.collection('payments');
 
 
   // middle admin before allowing admin activity
@@ -434,7 +434,7 @@ app.delete('/all-loans/:id', async (req, res) => {
           .sort({ appliedAt: -1 })
           .toArray();
         
-        console.log(` Found ${applications.length} applications`);
+        // console.log(` Found ${applications.length} applications`);
         res.json(applications);
       } catch (error) {
         console.error('Error fetching applications:', error);
@@ -446,14 +446,12 @@ app.delete('/all-loans/:id', async (req, res) => {
     app.get('/loan-applications/user/:email', async (req, res) => {
       try {
         const email = req.params.email;
-        console.log('Fetching applications for:', email);
         
         const applications = await loanApplicationCollection
           .find({ userEmail: email })
           .sort({ appliedAt: -1 })
           .toArray();
         
-        console.log(`Found ${applications.length} applications for ${email}`);
         res.json(applications);
       } catch (error) {
         console.error('Error fetching user applications:', error);
@@ -465,9 +463,9 @@ app.delete('/all-loans/:id', async (req, res) => {
     app.get('/loan-applications/:id', async (req, res) => {
       try {
         const id = req.params.id;
-        const application = await loanApplicationCollection.findOne({ 
-          _id: new ObjectId(id) 
-        });
+         const query = { _id: new ObjectId(id) };
+        const application = await loanApplicationCollection.findOne(query)
+          
         
         if (!application) {
           return res.status(404).json({ message: 'Application not found' });
@@ -539,118 +537,70 @@ app.delete('/all-loans/:id', async (req, res) => {
 
 
     // PAYMENT RELATED API 
-    app.post("/create-checkout-session", async (req, res) => {
-      try {
-        const paymentInfo = req.body;
-        console.log(paymentInfo)
-        const amount = parseInt(paymentInfo.cost) * 100; // Convert to cents
-        const session = await stripe.checkout.sessions.create({
-          line_items: [
-            {
-              price_data: {
-                currency: 'usd',
-                unit_amount: amount,
-                // unit_amount: paymentInfo.amount * 100,
-                product_data: {
-                  name: paymentInfo.parcelName,
-                },
-              },
+  app.post("/create-checkout-session", async (req, res) => {
+  try {
+    const paymentInfo = req.body;
+    
+    //  VALIDATION
+    if (!paymentInfo.cost || !paymentInfo.applicationName || !paymentInfo.senderEmail) {
+      return res.status(400).send({ 
+        success: false, 
+        error: 'Missing required fields: cost, applicationName, or senderEmail' 
+      });
+    }
 
-              quantity: 1,
+    //  LOGGING
+    console.log('Payment Info Received:', paymentInfo);
+    
+    const amount = parseInt(paymentInfo.cost) * 100;
+    
+    //  AMOUNT
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).send({ 
+        success: false, 
+        error: 'Invalid amount' 
+      });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            unit_amount: amount,
+            product_data: {
+              name: paymentInfo.applicationName,
             },
-          ],
-          customer_email: paymentInfo.senderEmail,
-          mode: 'payment',
-          metadata: {
-            parcelId: paymentInfo.parcelId,
-            parcelName: paymentInfo.parcelName
           },
-          success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
-        });
-        console.log(session)
-        return res.send({ url: session.url }); // ← Add return
-      } catch (error) {
-        console.error(error);
-        return res.status(500).send({ success: false, error: error.message }); // ← Add error handling
-      }
+          quantity: 1,
+        },
+      ],
+      customer_email: paymentInfo.senderEmail,
+      mode: 'payment',
+      metadata: {
+        applicationId: paymentInfo.applicationId,
+        applicationName: paymentInfo.applicationName
+      },
+      success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
     });
+    
+    console.log('Stripe Session Created:', session.id);
+    
+    return res.send({ success: true, url: session.url }); 
+    
+  } catch (error) {
+    console.error('Stripe Error:', error.message);
+    return res.status(500).send({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
 
 
     
-    app.patch('/payment-success', async (req, res) => {
-      try {
-        const sessionId = req.query.session_id;
-
-        if (!sessionId) {
-          return res.status(400).send({ success: false, message: 'Session ID required' });
-        }
-
-        const session = await stripe.checkout.sessions.retrieve(sessionId);
-        // console.log('session retrieve', session);
-        const transactionId = session.payment_intent;
-        const query = { transactionId: transactionId };
-        const paymentExist = await paymentCollection.findOne(query);
-        console.log(paymentExist)
-        if (paymentExist) {
-          return res.send({
-            message: 'Payment already recorded', transactionId,
-            trackingId: paymentExist.trackingId
-          });
-        }
-
-        const trackingId = generateTrackingId;
-
-        if (session.payment_status === 'paid') {
-          const id = session.metadata.parcelId;
-          const query = { _id: new ObjectId(id) };
-          const update = {
-            $set: {
-              paymentStatus: 'Paid',
-              trackingId: trackingId(),
-            },
-          };
-          const result = await parcelsCollection.updateOne(query, update);
-
-          const payment = {
-            amount: session.amount_total / 100,
-            currency: session.currency,
-            transactionId: session.payment_intent,
-            parcelId: session.metadata.parcelId,
-            parcelName: session.metadata.parcelName,
-            paymentStatus: session.payment_status,
-            customer_email: session.customer_email,
-            paidAt: new Date(),
-            trackingId: trackingId(),
-          }
-
-          if (session.payment_status === 'paid') {
-            const resultPayment = await paymentCollection.insertOne(payment);
-
-            return res.send({
-              success: true,
-              modifyparcel: result,
-              trackingId: trackingId(),
-              transactionId: session.payment_intent,
-              paymentInfo: resultPayment
-            });
-          }
-
-        }
-
-        // Only reaches here if payment_status is NOT 'paid'
-        return res.send({ success: false, message: 'Payment not completed' }); // ← Add return
-
-      } catch (err) {
-        console.error(err);
-        return res.status(500).send({ success: false, error: err.message }); // ← Add return and handle error properly
-      }
-    });
-
-    // ---------------------------------------------------------------------------------------- 
-
-
-
+   
 
 
 
@@ -927,7 +877,6 @@ app.delete('/all-loans/:id', async (req, res) => {
 //     });
 
   } finally {
-    // Ensures that the client will close when you finish/error
     // await client.close();
   }
 }
