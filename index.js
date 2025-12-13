@@ -255,7 +255,7 @@ app.patch('/users/:email', async (req, res) => {
     console.log('Updating user:', email);
     console.log('Update data:', updateData);
 
-    // Update or CREATE user in database (upsert: true)
+    // Update or CREATE user in database 
     const result = await userCollection.updateOne(
       { email: email },
       { 
@@ -390,7 +390,7 @@ app.delete('/all-loans/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+// ------------------------------------------------------------------- 
 
  // Create loan application
     app.post('/loan-applications', async (req, res) => {
@@ -534,6 +534,140 @@ app.delete('/all-loans/:id', async (req, res) => {
       }
     });
 
+    // --------------------------------------------------------------------------
+
+
+
+    // PAYMENT RELATED API 
+    app.post("/create-checkout-session", async (req, res) => {
+      try {
+        const paymentInfo = req.body;
+        console.log(paymentInfo)
+        const amount = parseInt(paymentInfo.cost) * 100; // Convert to cents
+        const session = await stripe.checkout.sessions.create({
+          line_items: [
+            {
+              price_data: {
+                currency: 'usd',
+                unit_amount: amount,
+                // unit_amount: paymentInfo.amount * 100,
+                product_data: {
+                  name: paymentInfo.parcelName,
+                },
+              },
+
+              quantity: 1,
+            },
+          ],
+          customer_email: paymentInfo.senderEmail,
+          mode: 'payment',
+          metadata: {
+            parcelId: paymentInfo.parcelId,
+            parcelName: paymentInfo.parcelName
+          },
+          success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
+        });
+        console.log(session)
+        return res.send({ url: session.url }); // ← Add return
+      } catch (error) {
+        console.error(error);
+        return res.status(500).send({ success: false, error: error.message }); // ← Add error handling
+      }
+    });
+
+
+    
+    app.patch('/payment-success', async (req, res) => {
+      try {
+        const sessionId = req.query.session_id;
+
+        if (!sessionId) {
+          return res.status(400).send({ success: false, message: 'Session ID required' });
+        }
+
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+        // console.log('session retrieve', session);
+        const transactionId = session.payment_intent;
+        const query = { transactionId: transactionId };
+        const paymentExist = await paymentCollection.findOne(query);
+        console.log(paymentExist)
+        if (paymentExist) {
+          return res.send({
+            message: 'Payment already recorded', transactionId,
+            trackingId: paymentExist.trackingId
+          });
+        }
+
+        const trackingId = generateTrackingId;
+
+        if (session.payment_status === 'paid') {
+          const id = session.metadata.parcelId;
+          const query = { _id: new ObjectId(id) };
+          const update = {
+            $set: {
+              paymentStatus: 'Paid',
+              trackingId: trackingId(),
+            },
+          };
+          const result = await parcelsCollection.updateOne(query, update);
+
+          const payment = {
+            amount: session.amount_total / 100,
+            currency: session.currency,
+            transactionId: session.payment_intent,
+            parcelId: session.metadata.parcelId,
+            parcelName: session.metadata.parcelName,
+            paymentStatus: session.payment_status,
+            customer_email: session.customer_email,
+            paidAt: new Date(),
+            trackingId: trackingId(),
+          }
+
+          if (session.payment_status === 'paid') {
+            const resultPayment = await paymentCollection.insertOne(payment);
+
+            return res.send({
+              success: true,
+              modifyparcel: result,
+              trackingId: trackingId(),
+              transactionId: session.payment_intent,
+              paymentInfo: resultPayment
+            });
+          }
+
+        }
+
+        // Only reaches here if payment_status is NOT 'paid'
+        return res.send({ success: false, message: 'Payment not completed' }); // ← Add return
+
+      } catch (err) {
+        console.error(err);
+        return res.status(500).send({ success: false, error: err.message }); // ← Add return and handle error properly
+      }
+    });
+
+    // ---------------------------------------------------------------------------------------- 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // users api start here 
 //     app.get("/parcels", async (req, res) => {
@@ -595,6 +729,8 @@ app.delete('/all-loans/:id', async (req, res) => {
 //       }
 //     });
 
+
+
 //     // PAYMENT RELATED API 
 //     app.post("/create-checkout-session", async (req, res) => {
 //       try {
@@ -632,6 +768,7 @@ app.delete('/all-loans/:id', async (req, res) => {
 //         return res.status(500).send({ success: false, error: error.message }); // ← Add error handling
 //       }
 //     });
+
 
 
 //     // riders rellated apis 
