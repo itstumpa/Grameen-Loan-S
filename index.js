@@ -600,7 +600,77 @@ app.delete('/all-loans/:id', async (req, res) => {
 
 
     
-   
+    app.patch('/payment-success', async (req, res) => {
+  try {
+    const sessionId = req.query.session_id;
+
+    if (!sessionId) {
+      return res.status(400).send({ success: false, message: 'Session ID required' });
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const transactionId = session.payment_intent;
+    
+    const paymentExist = await paymentCollection.findOne({ transactionId });
+    
+    if (paymentExist) {
+      return res.send({
+        success: true,
+        message: 'Payment already recorded',
+        transactionId,
+        trackingId: paymentExist.trackingId
+      });
+    }
+
+    if (session.payment_status === 'paid') {
+      const trackingId = generateTrackingId();
+      
+      const applicationId = session.metadata.applicationId;
+      const query = { _id: new ObjectId(applicationId) };
+      
+      const update = {
+        $set: {
+          paymentStatus: 'Paid',
+          trackingId: trackingId,
+        },
+      };
+      
+      const result = await loanApplicationCollection.updateOne(query, update);
+
+      const payment = {
+        amount: session.amount_total / 100,
+        currency: session.currency,
+        transactionId: session.payment_intent,
+        applicationId: applicationId,
+        applicationName: session.metadata.applicationName,
+        paymentStatus: session.payment_status,
+        customer_email: session.customer_email,
+        paidAt: new Date(),
+        trackingId: trackingId,
+      };
+
+      const resultPayment = await paymentCollection.insertOne(payment);
+
+      return res.send({
+        success: true,
+        modifiedApplication: result,
+        trackingId: trackingId,
+        transactionId: session.payment_intent,
+        paymentInfo: resultPayment
+      });
+    }
+
+    return res.send({ success: false, message: 'Payment not completed' });
+
+  } catch (err) {
+    console.error('Payment Success Error:', err);
+    return res.status(500).send({ success: false, error: err.message });
+  }
+});
+    // ---------------------------------------------------------------------------------------- 
+
+
+
 
 
 
