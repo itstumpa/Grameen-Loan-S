@@ -9,14 +9,13 @@ const port = process.env.PORT || 3000;
 
 
 const crypto = require("crypto");
-const admin = require("../Grameen_Loan_S/firebase/firebaseAdmin");
+const admin = require("firebase-admin");
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
 
-
-credential: admin.credential.cert({
-  project_id: process.env.FIREBASE_ADMIN_PROJECT_ID,
-  client_email: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-  private_key: process.env.FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, "\n"),
-})
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
 
 
 
