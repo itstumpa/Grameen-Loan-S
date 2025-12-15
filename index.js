@@ -74,7 +74,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // await client.connect();
-    console.log("✅ Connected to MongoDB");
+    // console.log("✅ Connected to MongoDB");
 
     const db = client.db('grameen-loan-db');
     const userCollection = db.collection('users');
