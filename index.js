@@ -21,9 +21,9 @@ credential: admin.credential.cert({
 
 
 function generateTrackingId() {
-  const prefix = "PRCL"; // your brand prefix
+  const prefix = "PRCL";
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
-  const random = crypto.randomBytes(3).toString("hex").toUpperCase(); // 6-char random hex
+  const random = crypto.randomBytes(3).toString("hex").toUpperCase();
 
   return `${prefix}-${date}-${random}`;
 }
@@ -53,7 +53,7 @@ const verifyFBToken = async (req, res, next) => {
     next();
 
   } catch (err) {
-    // console.error("Firebase verify token error:", err);
+    console.error("Firebase verify token error:", err);
     return res.status(401).send({ message: "Invalid or expired token" });
   }
 };
@@ -624,7 +624,33 @@ app.delete('/all-loans/:id', async (req, res) => {
 
 
 
+    app.get('/payment-details/:applicationId', async (req, res) => {
+  try {
+    const applicationId = req.params.applicationId;
+    
+    const payment = await paymentCollection.findOne({ 
+      applicationId: applicationId 
+    });
+    
+    if (!payment) {
+      return res.status(404).send({ 
+        success: false, 
+        message: 'Payment not found' 
+      });
+    }
+    
+    res.send(payment);
+    
+  } catch (error) {
+    console.error('Error fetching payment:', error);
+    res.status(500).send({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
 
+// --------------------------------------------------------------------------------------
   } finally {
     // await client.close();
   }
