@@ -30,7 +30,7 @@ function generateTrackingId() {
 
 // middleware 
 app.use(cors({
-  origin: ["http://localhost:5173"],
+  origin: ["http://localhost:5173", "https://grameen-loan-c.netlify.app", ],
   credentials: true,
 }));
 app.use(express.json());
@@ -73,7 +73,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     console.log("✅ Connected to MongoDB");
 
     const db = client.db('grameen-loan-db');
@@ -180,7 +180,7 @@ app.post('/users', async (req, res) => {
   }
 });
 
-  app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
+  app.patch('/users/:id/role', verifyFBToken, verifyAdmin, verifyManager, verifyUser, async (req, res) => {
             const id = req.params.id;
             const roleInfo = req.body;
             const query = { _id: new ObjectId(id) }
