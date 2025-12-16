@@ -126,7 +126,7 @@ async function run() {
 
 
     // Get all users
-app.get('/users', verifyFBToken, async (req, res) => {
+app.get('/users', verifyFBToken,  async (req, res) => {
   try {
     const users = await userCollection.find().toArray();
     res.json(users);
@@ -137,7 +137,7 @@ app.get('/users', verifyFBToken, async (req, res) => {
 });
 
 
- app.get('/users/:email/role', async (req, res) => {
+ app.get('/users/:email/role', verifyFBToken, verifyAdmin, async (req, res) => {
             const email = req.params.email;
             const query = { email }
             const user = await userCollection.findOne(query);
@@ -323,7 +323,7 @@ app.post('/all-loans', async (req, res) => {
 });
 
 // Update loan
-app.patch('/all-loans/:id', async (req, res) => {
+app.patch('/all-loans/:id',  verifyFBToken, verifyAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const updateData = req.body;
@@ -435,7 +435,7 @@ app.delete('/all-loans/:id', async (req, res) => {
     });
 
     // Update application status admin
-    app.patch('/loan-applications/:id', async (req, res) => {
+    app.patch('/loan-applications/:id',  verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const id = req.params.id;
         const updateData = req.body;
